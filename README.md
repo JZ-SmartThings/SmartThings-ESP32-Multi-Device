@@ -1,6 +1,6 @@
 # SmartThings-ESP32-Multi-Device
 
-This project consists of code for an ESP32 to interface with SmartThings using the SmartThings MQTT Bridge. While any ESP32 can be used, ones with built-in displays like Heltec Wifi Kit 32, Wemos ESP32 LoLin and even the Heltec Wifi Kit 8 (ESP8266) should be considered instead. The project includes Samsung SmartThings Device Type handlers for a stateful (on/off) switch, a stateless/momentary button and a contact sensor. The project also supports a variety of temperature & humidity sensors which can be seen on all 3 device types.
+This project consists of code for an ESP32 to interface with SmartThings using the SmartThings MQTT Bridge. While any ESP32 can be used, ones with built-in displays like Heltec Wifi Kit 32, Wemos ESP32 LoLin and even the Heltec Wifi Kit 8 (ESP8266) should be considered instead. The project includes Samsung SmartThings Device Type handlers for a stateful (on/off) switch, a stateless/momentary button and a contact sensor. The project also supports a variety of temperature & humidity sensors which can be seen on all 3 device types. Two of each capabilities (switch/button/contact) can be ran on each ESP32 device.
 GitHub link: https://github.com/JZ-SmartThings/SmartThings-ESP32-Multi-Device/tree/master/
 
 ---ESP32 Instructions

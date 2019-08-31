@@ -21,4 +21,4 @@ The contact sensor is read-only in SmartThings. I used a switch capability to sy
 
 * v1.0.20190831 - Initial version
 </br>
-<img src="https://raw.githubusercontent.com/JZ-SmartThings/SmartThings-ESP32-Multi-Device/_PICTURE.jpg">
+<img src="https://raw.githubusercontent.com/JZ-SmartThings/SmartThings-ESP32-Multi-Device/master/_PICTURE.jpg">

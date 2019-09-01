@@ -4,7 +4,7 @@ This project consists of code for an ESP32 to interface with SmartThings using t
 GitHub link: https://github.com/JZ-SmartThings/SmartThings-ESP32-Multi-Device/tree/master/
 
 ---ESP32 Instructions
-The *.ino file is an Arduino IDE code sample which is also compatible with MS Code Project IO so the ino file can be renamed to cpp if desired. Verify the few options at the top of the script before flashing your device. The default settings are for a Heltec Wifi Kit 32 with a 128x64 OLED display.
+The *.ino file is an Arduino IDE code sample which is also compatible with MS Code Platform IO so the ino file can be renamed to cpp if desired. Verify the few options at the top of the script before flashing your device. The default settings are for a Heltec Wifi Kit 32 with a 128x64 OLED display.
 
 ---SmartThings MQTT Bridge
 The bridge should be configured properly well before using this code. I had to make some changes to the MQTT SmartApp in order for the Temperature & Humidity to be written back to SmartThings. Please see the following commit in my fork in order to properly use Temperature Measurement & Relative Humidity capabilities. If this change is not made then neither temperature nor humidity will sync back to SmartThings.

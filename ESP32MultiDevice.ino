@@ -1,4 +1,4 @@
-const char* version_number = "1.0.20190831";
+const char* version_number = "1.0.20190907";
 
 /**
  *  ESP32 Multi Device
@@ -99,7 +99,7 @@ int humidityOffset = 0;
 // USE DHT TEMP/HUMIDITY SENSOR DESIGNATE WHICH PIN BELOW & PICK DHTTYPE BELOW AS WELL --- COMMENT OUT THE LINE BELOW TO BYPASS DHT LOGIC
 //#define useDHT
 #ifdef useDHT
-  uint8_t DHTPIN = 27;    // what pin is the DHT on? ---Heltec Wifi Kit 32=pin 27 ---Heltec Wifi Kit 8=pin 12 or D6
+  uint8_t DHTPIN = 27;    // what pin is the DHT on? --- Heltec Wifi Kit 32=pin 27  --- Wemos LoLin32=pin 13 --- Heltec Wifi Kit 8=pin 12 or D6
   // Uncomment whatever type of temperature sensor you're using!
   //#define DHTTYPE DHT11   // DHT 11
   #define DHTTYPE DHT22   // DHT 22  (AM2302)
@@ -145,7 +145,7 @@ float lastTemperaturePayload = -1; float lastHumidityPayload = -1; // only send 
 
 const char* updateIndex = "<p style='font-size: 150%;'>~~~mqttDeviceName~~~</p><form method='POST' action='/updatepost' enctype='multipart/form-data'><input type='file' name='update' style='font-size: 150%;'><br><br><input type='submit' value='Update' style='font-size: 150%;'></form>";
 const char* updateDone = "<html><head><meta http-equiv=\"REFRESH\" content=\"10;URL=/\"></head><marquee direction=\"right\"><h1>Update went OK!</h1><h1>Rebooting...</h1></marquee></html>";
-const char* rebootIndex = "<button style='font-size: 150%;' onClick=\"javascript: if (confirm(\'Are you sure you want to reboot?\')) parent.location='/rebootnow';\">Reboot</button>";
+const char* rebootIndex = "<p style='font-size: 150%;'>~~~mqttDeviceName~~~</p><button style='font-size: 150%;' onClick=\"javascript: if (confirm(\'Are you sure you want to reboot?\')) parent.location='/rebootnow';\">Reboot</button>";
 const char* rebootNow = "<html><head><meta http-equiv=\"REFRESH\" content=\"10;URL=/\"></head><marquee direction=\"right\"><h1>Rebooting...</h1></marquee></html>";
 
 #ifdef CONTACTPIN1
@@ -163,6 +163,8 @@ int mqtt_reconnect_count = 0;
 void callback(char* topic, byte* payload, unsigned int length);
 void reconnect();
 String uptime();
+String jsonString();
+String infoPageString();
 float probeDHT(int whichSensor);
 void outputDHT(unsigned long varMillis);
 void outputBME280(unsigned long varMillis);
@@ -335,7 +337,6 @@ void setup_wifi(bool reset_wifi) {
     delay(3000);
   #endif
 
-
   randomSeed(micros());
   Serial.println("");
   Serial.println("WiFi connected");
@@ -352,41 +353,17 @@ void setup_wifi(bool reset_wifi) {
     server.on("/", HTTP_GET, []() {
       server.sendHeader("Connection", "close");
       server.sendHeader("charset", "ISO-8859-1");
-      String jsonData = "{";
-      jsonData.concat("\n\"DeviceName\":\""); jsonData.concat(mqttDeviceName); jsonData.concat("\",");
-      jsonData.concat("\n\"DeviceIP\":\""); jsonData.concat(WiFi.localIP().toString()); jsonData.concat("\",");
-      jsonData.concat("\n\"Uptime\":\""); jsonData.concat(uptime()); jsonData.concat("\",");
-      jsonData.concat("\n\"InfoPage\":\"http://"); jsonData.concat(WiFi.localIP().toString()); jsonData.concat("/info\",");
-      if (Use5Vrelay == true ) {
-        jsonData.concat("\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "off" : "on"); jsonData.concat("\",");
-        jsonData.concat("\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "off" : "on"); jsonData.concat("\"");
-      } else {        
-        jsonData.concat("\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "on" : "off"); jsonData.concat("\",");
-        jsonData.concat("\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "on" : "off"); jsonData.concat("\"");
-      }
-      #ifdef CONTACTPIN1
-        jsonData.concat(",");
-        jsonData.concat("\n\"Contact1\":\""); jsonData.concat(digitalRead(CONTACTPIN1) ? "open" : "closed"); jsonData.concat("\"");
-      #endif
-      #ifdef CONTACTPIN2
-        jsonData.concat(",");
-        jsonData.concat("\n\"Contact2\":\""); jsonData.concat(digitalRead(CONTACTPIN2) ? "open" : "closed"); jsonData.concat("\"");
-      #endif
-      #if defined(useDHT) || defined(useBME280)
-        jsonData.concat(",");
-        jsonData.concat("\n\"Temperature\":\""); jsonData.concat(lastTemperaturePayload); jsonData.concat("\",");
-        jsonData.concat("\n\"Humidity\":\""); jsonData.concat(lastHumidityPayload); jsonData.concat("\"");
-      #endif
-      #if defined(useESP32Temp)
-        jsonData.concat(",");
-        jsonData.concat("\n\"Temperature\":\""); jsonData.concat(lastTemperaturePayload); jsonData.concat("\"");
-      #endif
-      jsonData.concat("\n}");
-      server.send(200, "text/json", (char*) jsonData.c_str());
+      server.send(200, "text/json", (char*) jsonString().c_str());
+    });
+    server.on("/favicon.ico", HTTP_GET, []() {
+      server.sendHeader("Connection", "close");
+      server.send(404, "text/html", "404 Page not found");
     });
     server.on("/reboot", HTTP_GET, []() {
       server.sendHeader("Connection", "close");
-      server.send(200, "text/html", rebootIndex);
+      String rebootIndexSTRING = String(rebootIndex);
+      rebootIndexSTRING.replace("~~~mqttDeviceName~~~",String(mqttDeviceName));
+      server.send(200, "text/html", rebootIndexSTRING);
     });
     server.on("/rebootnow", HTTP_GET, []() {
       server.sendHeader("Connection", "close");
@@ -396,57 +373,7 @@ void setup_wifi(bool reset_wifi) {
     });
     server.on("/info", HTTP_GET, []() {
       server.sendHeader("Connection", "close");
-      String infoData = "<html><table border=1 cellpadding=3><tbody>";
-      infoData.concat("\r\n<tr><td>Update Page</td><td><a href=\"http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update\">");
-      infoData.concat("http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update");infoData.concat("</a> OR <a href=\"http://");
-
-      String mqttDeviceNameSTRING = String(mqttDeviceName);
-      mqttDeviceNameSTRING.replace(" ","_");
-
-      infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update\">");
-      infoData.concat("http://"); infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update");infoData.concat("</a></td></tr>");
-      infoData.concat("\r\n<tr><td>Reboot"); infoData.concat("</td><td><a href=\"/reboot\">Reboot Page</a>"); infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>Use 5 volt relay?</td><td>"); infoData.concat( Use5Vrelay ? "true" : "false" ); infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>Switch 1</td><td>on pin "); infoData.concat(switch1); infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>Switch 2</td><td>on pin "); infoData.concat(switch2); infoData.concat("</td></tr>");
-      #ifdef CONTACTPIN1
-        infoData.concat("\r\n<tr><td>Contact Sensor 1</td><td>Enabled on pin "); infoData.concat(CONTACTPIN1); infoData.concat("</td></tr>");
-      #endif
-      #ifdef CONTACTPIN2
-        infoData.concat("\r\n<tr><td>Contact Sensor 2</td><td>Enabled on pin "); infoData.concat(CONTACTPIN2); infoData.concat("</td></tr>");
-      #endif
-      #if defined(useOLED128X64)
-        infoData.concat("\r\n<tr><td>OLED128X64 Display</td><td>Enabled</td></tr>");
-      #endif
-      #if defined(useOLED128X32)
-        infoData.concat("\r\n<tr><td>OLED128X32 Display</td><td>Enabled</td></tr>");
-      #endif
-      #if defined(useLCD2004)
-        infoData.concat("\r\n<tr><td>LCD2004 Display</td><td>Enabled</td></tr>");
-      #endif
-      #ifdef useDHT
-        infoData.concat("\r\n<tr><td>DHT"); infoData.concat(DHTTYPE); infoData.concat(" Multi-Sensor</td><td>Enabled on pin "); infoData.concat(DHTPIN); infoData.concat("</td></tr>");
-      #endif
-      #ifdef useBME280
-        infoData.concat("\r\n<tr><td>BME280 Multi-Sensor</td><td>Enabled</td></tr>");
-      #endif
-      #ifdef useESP32Temp
-        infoData.concat("\r\n<tr><td>ESP32 Internal Temperature Sensor</td><td>Enabled</td></tr>");
-      #endif    
-      infoData.concat("\r\n<tr><td>mqttServer");infoData.concat("</td><td>");infoData.concat(mqttServer);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttDeviceName");infoData.concat("</td><td>");infoData.concat(mqttDeviceName);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttSwitch1Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1Topic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttSwitch2Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2Topic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttSwitch1StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1StateTopic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttSwitch2StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2StateTopic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttSwitch1MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1MomentaryTopic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttSwitch2MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2MomentaryTopic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttContact1Topic");infoData.concat("</td><td>");infoData.concat(mqttContact1Topic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttContact2Topic");infoData.concat("</td><td>");infoData.concat(mqttContact2Topic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttTemperatureTopic");infoData.concat("</td><td>");infoData.concat(mqttTemperatureTopic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n<tr><td>mqttHumidityTopic");infoData.concat("</td><td>");infoData.concat(mqttHumidityTopic);infoData.concat("</td></tr>");
-      infoData.concat("\r\n</tbody></table><html>\r\n");
-      server.send(200, "text/html", infoData.c_str() );
+      server.send(200, "text/html", (char*) infoPageString().c_str() );
     });
     #ifdef ESP32
       server.on("/update", HTTP_GET, []() {
@@ -493,6 +420,120 @@ void setup_wifi(bool reset_wifi) {
   }
 } // ---------------------------------------------------------------------------------------------------------- setup_wifi
 
+String infoPageString() {
+  String infoData = "<html><head>";
+infoData.concat("<link href=\"data:image/x-icon;base64,AAABAAEAEBAAAAAAAABoBQAAFgAAACgAAAAQAAAAIAAAAAEACAAAAAAAAAEAAAAAAAAAAAAAAAE\
+AAAAAAAAAAAAAsmw5AK1pOAC0bTsArmk4AK9qOACxazoAtm87ALJsOgCzbToAr2o5ALBqOQCwazkAtW46ALFrOQAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQQCAgQBAAAAAAAAAAAMAgIBDAwBAgIMAAAAAAACAg4AAAAAAAAOAgQ\
+AAAAMAgsAAAAAAAAAAAwCCwAAAgIAAAAAAAAAAAAAAgIACQIEAAAAAAAAAAAAAAQCDQgCCgAAAAAAAAAAAAAKAgcAAgIAAAAAAgIAAAAAAgIAAAI\
+CAAAAAAICAAAAAAICAAAAAgIAAAACAgAAAAICAAAAAA4CCQAAAgIAAAMFBgAAAAAAAAAAAAICAAAAAAAAAAAAAAAAAAACAgAAAAAAAAAAAAAAAAA\
+ABQoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//AAD4HwAA4AcAAMfjAACP8QAAn/kAAB/4AAAf+AAAnnkAAJ55AADOcwAAxmMAAP5/AAD+fwAA/n8\
+AAP//AAA=\" rel=\"icon\" type=\"image/x-icon\" />");
+  infoData.concat("</head><body style=\"font-size: 14px;\"><table border=1 cellpadding=3 style=\"display:inline-block;\"><tbody>");
+  infoData.concat("\r\n<tr><td>Update Page</td><td><a href=\"http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update\">");
+  infoData.concat("http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update");infoData.concat("</a> OR <a href=\"http://");
+  String mqttDeviceNameSTRING = String(mqttDeviceName);
+  mqttDeviceNameSTRING.replace(" ","_");
+  infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update\">");
+  infoData.concat("http://"); infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update");infoData.concat("</a></td></tr>");
+  infoData.concat("\r\n<tr><td>Reboot"); infoData.concat("</td><td><a href=\"/reboot\">Reboot Page</a>"); infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>Wireless SSID");infoData.concat("</td><td>");infoData.concat(ssid);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>Version");infoData.concat("</td><td>");infoData.concat(version_number);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>Use 5 volt relay?</td><td>"); infoData.concat( Use5Vrelay ? "true" : "false" ); infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>Switch 1</td><td>on pin "); infoData.concat(switch1); infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>Switch 2</td><td>on pin "); infoData.concat(switch2); infoData.concat("</td></tr>");
+  #ifdef CONTACTPIN1
+    infoData.concat("\r\n<tr><td>Contact Sensor 1</td><td>Enabled on pin "); infoData.concat(CONTACTPIN1); infoData.concat("</td></tr>");
+  #endif
+  #ifdef CONTACTPIN2
+    infoData.concat("\r\n<tr><td>Contact Sensor 2</td><td>Enabled on pin "); infoData.concat(CONTACTPIN2); infoData.concat("</td></tr>");
+  #endif
+  #if defined(useOLED128X64)
+    infoData.concat("\r\n<tr><td>OLED128X64 Display</td><td>Enabled</td></tr>");
+  #endif
+  #if defined(useOLED128X32)
+    infoData.concat("\r\n<tr><td>OLED128X32 Display</td><td>Enabled</td></tr>");
+  #endif
+  #if defined(useLCD2004)
+    infoData.concat("\r\n<tr><td>LCD2004 Display</td><td>Enabled</td></tr>");
+  #endif
+  #ifdef useDHT
+    infoData.concat("\r\n<tr><td>DHT"); infoData.concat(DHTTYPE); infoData.concat(" Multi-Sensor</td><td>Enabled on pin "); infoData.concat(DHTPIN); infoData.concat("</td></tr>");
+  #endif
+  #ifdef useBME280
+    infoData.concat("\r\n<tr><td>BME280 Multi-Sensor</td><td>Enabled</td></tr>");
+  #endif
+  #ifdef useESP32Temp
+    infoData.concat("\r\n<tr><td>ESP32 Internal Temperature Sensor</td><td>Enabled</td></tr>");
+  #endif
+  #if defined(useDHT) || defined(useBME280) || defined(useESP32Temp)
+    infoData.concat("\r\n<tr><td>Temperature Offset</td><td>"); infoData.concat(temperatureOffset); infoData.concat("</td></tr>");
+  #endif
+  #if defined(useDHT) || defined(useBME280)
+    infoData.concat("\r\n<tr><td>Humidity Offset</td><td>"); infoData.concat(humidityOffset); infoData.concat("</td></tr>");
+  #endif
+  infoData.concat("\r\n<tr><td>mqttServer");infoData.concat("</td><td>");infoData.concat(mqttServer);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttDeviceName");infoData.concat("</td><td>");infoData.concat(mqttDeviceName);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttSwitch1Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1Topic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttSwitch2Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2Topic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttSwitch1StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1StateTopic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttSwitch2StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2StateTopic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttSwitch1MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1MomentaryTopic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttSwitch2MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2MomentaryTopic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttContact1Topic");infoData.concat("</td><td>");infoData.concat(mqttContact1Topic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttContact2Topic");infoData.concat("</td><td>");infoData.concat(mqttContact2Topic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttTemperatureTopic");infoData.concat("</td><td>");infoData.concat(mqttTemperatureTopic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n<tr><td>mqttHumidityTopic");infoData.concat("</td><td>");infoData.concat(mqttHumidityTopic);infoData.concat("</td></tr>");
+  infoData.concat("\r\n</tbody></table>");
+  infoData.concat("\r\n<div style=\"display: inline-block;vertical-align: top;margin: 20px;border-style: dashed;padding: 20px;\"><h3>JSON Data From the Root Page</h3>\r\n");
+  String jsonTemp = jsonString(); jsonTemp.replace("\n","</br>");
+  infoData.concat(jsonTemp);
+  infoData.concat("\r\n</div></body><html>\r\n");
+  return infoData;
+}
+
+String jsonString() {
+  String jsonData = "{";
+  jsonData.concat("\r\n\"DeviceName\":\""); jsonData.concat(mqttDeviceName); jsonData.concat("\",");
+  jsonData.concat("\r\n\"DeviceIP\":\""); jsonData.concat(WiFi.localIP().toString()); jsonData.concat("\",");
+  jsonData.concat("\r\n\"Uptime\":\""); jsonData.concat(uptime()); jsonData.concat("\",");
+  jsonData.concat("\r\n\"InfoPage\":\"http://"); jsonData.concat(WiFi.localIP().toString()); jsonData.concat("/info\",");
+  if (Use5Vrelay == true ) {
+    jsonData.concat("\r\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "off" : "on"); jsonData.concat("\",");
+    jsonData.concat("\r\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "off" : "on"); jsonData.concat("\"");
+  } else {        
+    jsonData.concat("\r\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "on" : "off"); jsonData.concat("\",");
+    jsonData.concat("\r\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "on" : "off"); jsonData.concat("\"");
+  }
+  #ifdef CONTACTPIN1
+    jsonData.concat(",");
+    jsonData.concat("\r\n\"Contact1\":\""); jsonData.concat(digitalRead(CONTACTPIN1) ? "open" : "closed"); jsonData.concat("\"");
+  #endif
+  #ifdef CONTACTPIN2
+    jsonData.concat(",");
+    jsonData.concat("\r\n\"Contact2\":\""); jsonData.concat(digitalRead(CONTACTPIN2) ? "open" : "closed"); jsonData.concat("\"");
+  #endif
+  #if defined(useDHT) || defined(useBME280)
+    if (lastTemperaturePayload != -1) { jsonData.concat(",\r\n\"Temperature\":\""); jsonData.concat(int(lastTemperaturePayload)); jsonData.concat("\""); }
+    if (lastHumidityPayload != -1) { jsonData.concat(",\r\n\"Humidity\":\""); jsonData.concat(int(lastHumidityPayload)); jsonData.concat("\""); }
+  #endif
+  #if defined(useESP32Temp)
+    if (lastTemperaturePayload != -1) { jsonData.concat(",\n\"Temperature\":\""); jsonData.concat(int(lastTemperaturePayload)); jsonData.concat("\""); }
+  #endif
+  jsonData.concat("\r\n}");
+  return jsonData;
+}
 
 
 unsigned long loopMillis = 0;
@@ -502,7 +543,7 @@ void loop() { //----------------------------------------------------------------
   //Serial.print("-------------------------LOOP MILLIS: "); Serial.println(loopMillis);
 
   // MQTT CONNECTED EVERY 15 MINUTES AND INITIAL
-  if (loopMillis % 900000 < 150 || (loopMillis>=30000 && loopMillis<=30150)) { // every 15 minutes and at 30 seconds
+  if (loopMillis % 900000 < 200 || (loopMillis>=30000 && loopMillis<=30200)) { // every 15 minutes and at 30 seconds
     client.publish(mqttSwitch1StateTopic, "connected");
     client.publish(mqttSwitch2StateTopic, "connected");
     Serial.print("--------------------------------------------------UpTime: "); Serial.println(uptime());
@@ -643,11 +684,6 @@ void loop() { //----------------------------------------------------------------
       client.publish(mqttContact1Topic,currentContact1Read ? "open" : "closed");
       lastContact1Payload = currentContact1Read ? "open" : "closed";
 
-      //SmartThings contact sensors are READ ONLY - switch logic is the workaround.
-      String mqttContact1TopicSTRING = String(mqttContact1Topic);
-      mqttContact1TopicSTRING.replace("/contact","/switch");
-      client.publish(mqttContact1TopicSTRING.c_str(),currentContact1Read ? "on" : "off");
-
       Serial.print ("mqttSensor1 published: "); Serial.println (lastContact1Payload);
       delay(1000);
     }
@@ -659,18 +695,11 @@ void loop() { //----------------------------------------------------------------
       client.publish(mqttContact2Topic,currentContact2Read ? "open" : "closed");
       lastContact2Payload = currentContact2Read ? "open" : "closed";
 
-      //SmartThings contact sensors are READ ONLY - switch logic is the workaround.
-      String mqttContact2TopicSTRING = String(mqttContact2Topic);
-      mqttContact2TopicSTRING.replace("/contact","/switch");
-      client.publish(mqttContact2TopicSTRING.c_str(),currentContact2Read ? "on" : "off");
-
       Serial.print ("mqttSensor2 published: "); Serial.println (lastContact2Payload);
       delay(1000);
     }
   #endif
 } // ---------------------------------------------------------------------------------------------------------- LOOP
-
-
 
 
 
@@ -758,7 +787,6 @@ void reconnect() { // MQTT RECONNECT
     }
   }
 } // MQTT RECONNECT
-
 
 
 String uptime() {

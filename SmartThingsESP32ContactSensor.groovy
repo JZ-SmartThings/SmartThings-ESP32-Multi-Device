@@ -1,5 +1,5 @@
 /**
- *  ESP32 Contact Sensor v1.0.20190831
+ *  ESP32 Contact Sensor v1.0.20190907
  *  Copyright 2019 JZ
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
@@ -20,8 +20,6 @@ metadata {
 
 		command "open"
 		command "close"
-		command "on"
-		command "off"
         command "markDeviceOnline"
         command "markDeviceOffline"
 		command "setTemperature"
@@ -35,10 +33,6 @@ metadata {
 		standardTile("contact", "device.contact", width: 3, height: 2) {
 			state("closed", label:'${name}', icon:"st.contact.contact.closed", backgroundColor:"#53a7c0")
 			state("open", label:'${name}', icon:"st.contact.contact.open", backgroundColor:"#FF6600")
-		}
-		standardTile("switch", "device.switch", width: 1, height: 1, canChangeIcon: true) { // SWITCH NOT SHOWN BUT USED TO SYNC CONTACT STATE AS IT'S READ ONLY OTHERWISE
-			state "off", label: '${currentValue}', action: "switch.on", icon: "st.switches.switch.off", backgroundColor: "#ffffff"
-			state "on", label: '${currentValue}', action: "switch.off", icon: "st.switches.switch.on", backgroundColor: "#79b821"
 		}
         standardTile("deviceHealthControl", "device.healthStatus", decoration: "flat", width: 1, height: 1, inactiveLabel: false) {
             state "online",  label: "ONLINE", backgroundColor: "#00A0DC", action: "markDeviceOffline", icon: "st.Health & Wellness.health9", nextState: "goingOffline", defaultState: true
@@ -78,7 +72,7 @@ metadata {
 def installed() {
     log.trace "Executing 'installed'"
     markDeviceOnline()
-    off()
+//    off()
     initialize()
 }
 
@@ -131,18 +125,6 @@ def open() {
 
 def close() {
 	log.trace "close()"
-    sendEvent(name: "contact", value: "closed")
-}
-
-def on() {
-	log.debug "$version on()"
-	sendEvent(name: "switch", value: "on")
-	sendEvent(name: "contact", value: "open")
-}
-
-def off() {
-	log.debug "$version off()"
-	sendEvent(name: "switch", value: "off")
     sendEvent(name: "contact", value: "closed")
 }
 

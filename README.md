@@ -4,20 +4,25 @@ This project consists of code for an ESP32 to interface with SmartThings using t
 
 GitHub link: https://github.com/JZ-SmartThings/SmartThings-ESP32-Multi-Device/tree/master/
 
----ESP32 Instructions---<br>
+ESP32 Instructions
+__________________
 The *.ino file is an Arduino IDE code sample which is also compatible with MS Code Platform IO so the ino file can be renamed to cpp if desired. Verify the few options at the top of the script before flashing your device. The default settings are for a Heltec Wifi Kit 32 with a 128x64 OLED display.
 
----SmartThings MQTT Bridge---<br>
+SmartThings MQTT Bridge
+_______________________
 The bridge should be configured properly well before using this code. I had to make some changes to the MQTT SmartApp in order for the Contact state, Temperature & Humidity to be written back to SmartThings. Please see the following version of the SmartApp in my fork in order to properly use Contact Sensor, Temperature Measurement & Relative Humidity capabilities. If this change is not made then none of three capabilities will sync back to SmartThings.
 https://github.com/JZ-SmartThings/smartthings-mqtt-bridge/blob/master/smartapps/stj/mqtt-bridge.src/mqtt-bridge.groovy
 
----Displays---<br>
+Displays
+________
 Displays like the OLED 128x64, 128x32 and the 2004 LCD (20 character 4 line) are all supported w/o code changes.
 
----Temperature & Humidity---<br>
+Temperature & Humidity
+______________________
 Temperature & Humidity sensors like the BME280, DHT22, DHT21, DHT11 and the built-in ESP32 temperature sensor (only on older chips, deprecated in later chips) are all supported w/o code change.
 
----Contact Sensor---<br>
+Contact Sensor
+______________
 Make sure to use my fork and run the MQTT SmartApp from there otherwise the contact sensor will not work.
 
 * v1.0.20190907 - Changed MQTT SmartApp in order to sync Contact state. No longer using on/off sync workaround. Small enhancements and fixes.

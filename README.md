@@ -5,6 +5,8 @@ This project consists of code for an ESP32 to interface with SmartThings using t
 
 GitHub link: https://github.com/JZ-SmartThings/SmartThings-ESP32-Multi-Device/tree/master/
 
+SmartThings Community thread: https://community.smartthings.com/t/171895
+
 ESP32 Instructions
 ------------------
 
@@ -14,7 +16,11 @@ SmartThings MQTT Bridge
 ------------------
 
 The bridge should be configured properly well before using this code. I had to make some changes to the MQTT SmartApp in order for the Contact state, Temperature & Humidity to be written back to SmartThings. Please see the following version of the SmartApp in my fork in order to properly use Contact Sensor, Temperature Measurement & Relative Humidity capabilities. If this change is not made then none of three capabilities will sync back to SmartThings.
-https://github.com/JZ-SmartThings/smartthings-mqtt-bridge/blob/master/smartapps/stj/mqtt-bridge.src/mqtt-bridge.groovy
+
+Direct link to the SmartApp code: https://github.com/JZ-SmartThings/smartthings-mqtt-bridge/blob/master/smartapps/stj/mqtt-bridge.src/mqtt-bridge.groovy
+
+Differences between original and my pull of the SmartThings MQTT Bridge: https://github.com/stjohnjohnson/smartthings-mqtt-bridge/pull/207/files
+
 
 Displays
 ------------------

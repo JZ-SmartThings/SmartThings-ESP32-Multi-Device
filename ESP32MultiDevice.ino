@@ -1,4 +1,4 @@
-const char* version_number = "1.0.20190907";
+const char* version_number = "1.0.20190921";
 
 /**
  *  ESP32 Multi Device
@@ -13,21 +13,39 @@ const char* version_number = "1.0.20190907";
  *  for the specific language governing permissions and limitations under the License.
  */
 
-const char* ssid = "SSID";
-const char* password = "password";
+// ------------------------------------------------------------------  WIFI & ETHERNET CONNECTION
+
+#if defined(ESP32) || defined(ESP8266)
+  const char* ssid = "SSID";
+  const char* password = "password";
+#elif defined(__AVR__)
+  // You can use Ethernet.init(pin) to configure the CS (chip select) pin
+  // 10=Most Arduino shields --- 5=MKR ETH shield --- 0=Teensy 2.0 --- 20=Teensy++ 2.0 --- 15=ESP8266 with Adafruit Featherwing Ethernet --- 33=ESP32 with Adafruit Featherwing Ethernet
+  int ethPin = 10;
+
+  //#include <UIPEthernet.h>
+  #include <Ethernet.h>
+  #include <Arduino.h>
+  // Enter a MAC address and IP address for your controller below.
+  byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+
+  // The IP address will be dependent on your local network:
+  byte ip[] = { 0, 0, 0, 0 }; // USE DHCP
+  //byte ip[] = { 192, 168, 0, 177 }; // STATIC IP
+#endif
 
 unsigned long RebootFrequencyDays = 0; // ZERO DISABLES THE AUTO-REBOOT
 
 // ------------------------------------------------------------------ SWITCH CONFIGURATION
 bool Use5Vrelay = true;       // SEND GROUND TO THE PIN INSTEAD OF VCC AS USED WITH 5V RELAYS - FALSE SENDS VCC
-int switch1 = 32;             // switch pin 1 ---Heltec Wifi Kit 32 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13)
-int switch2 = 33;             // switch pin 2 ---Heltec Wifi Kit 32 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13)
+int switch1 = 32;             // switch pin 1 ---Heltec Wifi Kit 32 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13) ---UNO (use 5,6)
+int switch2 = 33;             // switch pin 2 ---Heltec Wifi Kit 33 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13) ---UNO (use 5,6)
 
 int STATUS_LED = 25;          // OPTIONAL --- Heltec Wifi Kit 32 use 25
 
 // ------------------------------------------------------------------ DESIGNATE CONTACT SENSOR PINS OR COMMENT OUT 2 LINES BELOW TO BYPASS CONTACT SENSORS
-#define CONTACTPIN1 19      // what pin is the 1st Contact Sensor on? ---Heltec Wifi Kit 32 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13)
-#define CONTACTPIN2 23      // what pin is the 2nd Contact Sensor on? ---Heltec Wifi Kit 32 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13)
+//#define CONTACTPIN1 19      // what pin is the 1st Contact Sensor on? ---Heltec Wifi Kit 32 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13) ---UNO (use 5,6)
+//#define CONTACTPIN2 23      // what pin is the 2nd Contact Sensor on? ---Heltec Wifi Kit 32 (use 32,33,19,23) ---Heltec Wifi Kit 8 (use 3,13) ---UNO (use 5,6)
 
 
 // ------------------------------------------------------------------ MQTT TOPICS
@@ -142,6 +160,10 @@ float lastTemperaturePayload = -1; float lastHumidityPayload = -1; // only send 
   ESP8266WebServer server(80);
   ESP8266HTTPUpdateServer httpUpdater;
 #endif
+#ifdef __AVR__
+  #include <SPI.h>
+  #include <Server.h>
+#endif
 
 const char* updateIndex = "<p style='font-size: 150%;'>~~~mqttDeviceName~~~</p><form method='POST' action='/updatepost' enctype='multipart/form-data'><input type='file' name='update' style='font-size: 150%;'><br><br><input type='submit' value='Update' style='font-size: 150%;'></form>";
 const char* updateDone = "<html><head><meta http-equiv=\"REFRESH\" content=\"10;URL=/\"></head><marquee direction=\"right\"><h1>Update went OK!</h1><h1>Rebooting...</h1></marquee></html>";
@@ -155,8 +177,15 @@ const char* rebootNow = "<html><head><meta http-equiv=\"REFRESH\" content=\"10;U
   const char* lastContact2Payload;
 #endif
 
-WiFiClient espClient;
-PubSubClient client(espClient);
+#if defined (ESP32) || defined (ESP8266)
+  WiFiClient espClient;
+  PubSubClient client(espClient);
+#elif defined(__AVR__)
+  EthernetClient ethClient;
+  EthernetServer server(80);
+  PubSubClient client(ethClient);
+#endif
+
 int mqtt_reconnect_count = 0;
 
 // ------------------------------------------------------------------ FUNCTION DECLARATIONS
@@ -176,8 +205,8 @@ void setup_wifi(bool reset_wifi = false);
 void setup() { // ---------------------------------------------------------------------------------------------------------- SETUP
   Serial.begin(115200);
 
-  pinMode(switch1, OUTPUT_OPEN_DRAIN);
-  pinMode(switch2, OUTPUT_OPEN_DRAIN);
+  pinMode(switch1, OUTPUT);
+  pinMode(switch2, OUTPUT);
   digitalWrite(switch1, Use5Vrelay == true ? HIGH : LOW);
   digitalWrite(switch2, Use5Vrelay == true ? HIGH : LOW);
 
@@ -198,7 +227,36 @@ void setup() { // --------------------------------------------------------------
     lcd.backlight(); //enable the backlight
   #endif
 
-  setup_wifi(false);
+
+// SETUP NETWORK
+  #if defined (ESP32) || defined (ESP8266)
+    setup_wifi(false);
+  #elif defined(__AVR__)
+    Ethernet.init(ethPin);
+   
+    // start the Ethernet connection and the server:
+    if (ip[0]==0 && ip[1]==0 && ip[2]==0 && ip[3]==0) {
+      Ethernet.begin(mac); // USE DHCP
+    } else {
+      Ethernet.begin(mac, ip); // USE STATIC IP ABOVE
+    }
+    // Check for Ethernet hardware present
+    if (Ethernet.hardwareStatus() == EthernetNoHardware) {
+      Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware. :(");
+      while (true) {
+        delay(1); // do nothing, no point running without Ethernet hardware
+      }
+    }
+    if (Ethernet.linkStatus() == LinkOFF) {
+      Serial.println("Ethernet cable is not connected.");
+    }
+
+    // start the server
+    server.begin();
+    Serial.print("IP address: ");
+    Serial.println(Ethernet.localIP());
+  #endif
+
   client.setServer(mqttServer, 1883);
   client.setCallback(callback);
 
@@ -235,194 +293,199 @@ void setup() { // --------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------- SET UP WIFI AND OTHER WIFI DEPENDENT ITEMS
 void setup_wifi(bool reset_wifi) {
-  delay(50);
-  // STATUS LED ON WHILE ACQUIRING WIFI
-  pinMode(STATUS_LED, OUTPUT);
-  digitalWrite(STATUS_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
+  #if defined (ESP32) || defined (ESP8266)
+    delay(50);
+    // STATUS LED ON WHILE ACQUIRING WIFI
+    pinMode(STATUS_LED, OUTPUT);
+    digitalWrite(STATUS_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
 
-  // We start by connecting to a WiFi network
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  //WiFi.mode(WIFI_AP_STA);
-  if (reset_wifi==true) {
-    WiFi.disconnect();
-    WiFi.mode(WIFI_OFF);
-    delay(1000);
-  }
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  int counter = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    // We start by connecting to a WiFi network
+    Serial.println();
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+    //WiFi.mode(WIFI_AP_STA);
+    if (reset_wifi==true) {
+      WiFi.disconnect();
+      WiFi.mode(WIFI_OFF);
+      delay(1000);
+    }
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    int counter = 0;
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+      #if defined(useOLED128X64)
+        u8g2.clearBuffer();
+        u8g2.setFont(u8g2_font_pxplusibmcgathin_8f);
+        u8g2.drawStr(0,12,"Trying SSID:");
+        u8g2.drawStr(0,24,ssid);
+        u8g2.drawStr(0,48,"for...");
+        char buf[16];
+        dtostrf(counter/2,0,0,buf);
+        strcat(buf,(counter/2) == 1 ? " second" : " seconds");
+        u8g2.drawStr(0,60,buf);
+        u8g2.sendBuffer();          // transfer internal memory to the display
+      #endif
+      #if defined(useOLED128X32)
+        u8g2.clearBuffer();
+        u8g2.setFont(u8g2_font_pxplusibmcgathin_8f);
+        char buf[16];
+        dtostrf(counter/2,0,0,buf);
+        u8g2.drawStr(0,12,"Trying SSID:");
+        u8g2.drawStr(112,12,buf);
+        u8g2.drawStr(0,24,ssid);
+        u8g2.sendBuffer();          // transfer internal memory to the display
+      #endif
+      #if defined(useLCD2004)
+        lcd.clear(); //initialize the lcd
+        lcd.setCursor(0,0);
+        lcd.print("Trying SSID:");
+        lcd.setCursor(14,0); // set the cursor to column 14, line 0
+        lcd.print(counter/2);
+        lcd.setCursor(0,1);
+        lcd.print(ssid);
+      #endif
+
+      counter++;
+      if ( counter >= 120 ) { ESP.restart(); }
+    }
+
     #if defined(useOLED128X64)
       u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_pxplusibmcgathin_8f);
-      u8g2.drawStr(0,12,"Trying SSID:");
+      u8g2.setFont(u8g2_font_6x10_tf);
+      u8g2.drawStr(0,12,"Success with SSID:");
       u8g2.drawStr(0,24,ssid);
-      u8g2.drawStr(0,48,"for...");
-      char buf[16];
+      u8g2.drawStr(0,48,"Time to connect:");
+      char buf[20];
       dtostrf(counter/2,0,0,buf);
       strcat(buf,(counter/2) == 1 ? " second" : " seconds");
       u8g2.drawStr(0,60,buf);
       u8g2.sendBuffer();          // transfer internal memory to the display
+      delay(3000);
+      //u8g2.clearBuffer();
     #endif
     #if defined(useOLED128X32)
       u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_pxplusibmcgathin_8f);
-      char buf[16];
-      dtostrf(counter/2,0,0,buf);
-      u8g2.drawStr(0,12,"Trying SSID:");
-      u8g2.drawStr(112,12,buf);
+      u8g2.setFont(u8g2_font_6x10_tf);
+      u8g2.drawStr(0,12,"Success with SSID:");
       u8g2.drawStr(0,24,ssid);
-      u8g2.sendBuffer();          // transfer internal memory to the display
+      u8g2.sendBuffer();
+      delay(3000);
+      u8g2.clearBuffer();
+      u8g2.drawStr(0,12,"Time to connect:");
+      char buf[20];
+      dtostrf(counter/2,0,0,buf);
+      strcat(buf,(counter/2) == 1 ? " second" : " seconds");
+      u8g2.drawStr(0,24,buf);
+      u8g2.sendBuffer();
+      delay(3000);
+      //u8g2.clearBuffer();
     #endif
+
     #if defined(useLCD2004)
       lcd.clear(); //initialize the lcd
       lcd.setCursor(0,0);
-      lcd.print("Trying SSID:");
-      lcd.setCursor(14,0); // set the cursor to column 14, line 0
-      lcd.print(counter/2);
+      lcd.print("Success with SSID:");
+      lcd.setCursor(0,1); // set the cursor to column 14, line 0
+      lcd.print(ssid);
+      lcd.setCursor(0,2); // set the cursor to column 14, line 0
+      lcd.print("Time to connect:");
+      lcd.setCursor(0,3); // set the cursor to column 14, line 0
+      String cnt = String(counter/2);
+      cnt == "1" ? cnt+=" second" : cnt+=" seconds";
+      lcd.print(cnt);
+      delay(3000);
     #endif
 
-    counter++;
-    if ( counter >= 120 ) { ESP.restart(); }
-  }
+    randomSeed(micros());
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    // STATUS LED OFF
+    digitalWrite(STATUS_LED, LOW);  // Turn the LED off by making the voltage HIGH
 
-  #if defined(useOLED128X64)
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_6x10_tf);
-    u8g2.drawStr(0,12,"Success with SSID:");
-    u8g2.drawStr(0,24,ssid);
-    u8g2.drawStr(0,48,"Time to connect:");
-    char buf[20];
-    dtostrf(counter/2,0,0,buf);
-    strcat(buf,(counter/2) == 1 ? " second" : " seconds");
-    u8g2.drawStr(0,60,buf);
-    u8g2.sendBuffer();          // transfer internal memory to the display
-    delay(3000);
-    //u8g2.clearBuffer();
-  #endif
-  #if defined(useOLED128X32)
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_6x10_tf);
-    u8g2.drawStr(0,12,"Success with SSID:");
-    u8g2.drawStr(0,24,ssid);
-    u8g2.sendBuffer();
-    delay(3000);
-    u8g2.clearBuffer();
-    u8g2.drawStr(0,12,"Time to connect:");
-    char buf[20];
-    dtostrf(counter/2,0,0,buf);
-    strcat(buf,(counter/2) == 1 ? " second" : " seconds");
-    u8g2.drawStr(0,24,buf);
-    u8g2.sendBuffer();
-    delay(3000);
-    //u8g2.clearBuffer();
-  #endif
-
-  #if defined(useLCD2004)
-    lcd.clear(); //initialize the lcd
-    lcd.setCursor(0,0);
-    lcd.print("Success with SSID:");
-    lcd.setCursor(0,1); // set the cursor to column 14, line 0
-    lcd.print(ssid);
-    lcd.setCursor(0,2); // set the cursor to column 14, line 0
-    lcd.print("Time to connect:");
-    lcd.setCursor(0,3); // set the cursor to column 14, line 0
-    String cnt = String(counter/2);
-    cnt == "1" ? cnt+=" second" : cnt+=" seconds";
-    lcd.print(cnt);
-    delay(3000);
-  #endif
-
-  randomSeed(micros());
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  // STATUS LED OFF
-  digitalWrite(STATUS_LED, LOW);  // Turn the LED off by making the voltage HIGH
-
-  //OTA & JSON
-  if (WiFi.status() == WL_CONNECTED) {
-    String mqttDeviceNameSTRING = String(mqttDeviceName);
-    mqttDeviceNameSTRING.replace(" ","_");
-    MDNS.begin(mqttDeviceNameSTRING.c_str());
-    server.on("/", HTTP_GET, []() {
-      server.sendHeader("Connection", "close");
-      server.sendHeader("charset", "ISO-8859-1");
-      server.send(200, "text/json", (char*) jsonString().c_str());
-    });
-    server.on("/favicon.ico", HTTP_GET, []() {
-      server.sendHeader("Connection", "close");
-      server.send(404, "text/html", "404 Page not found");
-    });
-    server.on("/reboot", HTTP_GET, []() {
-      server.sendHeader("Connection", "close");
-      String rebootIndexSTRING = String(rebootIndex);
-      rebootIndexSTRING.replace("~~~mqttDeviceName~~~",String(mqttDeviceName));
-      server.send(200, "text/html", rebootIndexSTRING);
-    });
-    server.on("/rebootnow", HTTP_GET, []() {
-      server.sendHeader("Connection", "close");
-      server.send(200, "text/html", rebootNow);
-      delay(1000);
-      ESP.restart();
-    });
-    server.on("/info", HTTP_GET, []() {
-      server.sendHeader("Connection", "close");
-      server.send(200, "text/html", (char*) infoPageString().c_str() );
-    });
-    #ifdef ESP32
-      server.on("/update", HTTP_GET, []() {
+    //OTA & JSON
+    if (WiFi.status() == WL_CONNECTED) {
+      String mqttDeviceNameSTRING = String(mqttDeviceName);
+      mqttDeviceNameSTRING.replace(" ","_");
+      MDNS.begin(mqttDeviceNameSTRING.c_str());
+      server.on("/", HTTP_GET, []() {
         server.sendHeader("Connection", "close");
-        String updateIndexSTRING = String(updateIndex);
-        updateIndexSTRING.replace("~~~mqttDeviceName~~~",String(mqttDeviceName));
-        server.send(200, "text/html", updateIndexSTRING);
+        server.sendHeader("charset", "ISO-8859-1");
+        server.send(200, "text/json", (char*) jsonString().c_str());
       });
-      server.on("/updatepost", HTTP_POST, []() {
+      server.on("/favicon.ico", HTTP_GET, []() {
         server.sendHeader("Connection", "close");
-        server.send(200, "text/html", (Update.hasError()) ? "FAIL" : updateDone);
+        server.send(404, "text/html", "404 Page not found");
+      });
+      server.on("/reboot", HTTP_GET, []() {
+        server.sendHeader("Connection", "close");
+        String rebootIndexSTRING = String(rebootIndex);
+        rebootIndexSTRING.replace("~~~mqttDeviceName~~~",String(mqttDeviceName));
+        server.send(200, "text/html", rebootIndexSTRING);
+      });
+      server.on("/rebootnow", HTTP_GET, []() {
+        server.sendHeader("Connection", "close");
+        server.send(200, "text/html", rebootNow);
         delay(1000);
         ESP.restart();
-      }, []() {
-        HTTPUpload& upload = server.upload();
-        if (upload.status == UPLOAD_FILE_START) {
-          Serial.setDebugOutput(true);
-          Serial.printf("Update: %s\n", upload.filename.c_str());
-          if (!Update.begin()) { //start with max available size
-            Update.printError(Serial);
-          }
-        } else if (upload.status == UPLOAD_FILE_WRITE) {
-          if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-            Update.printError(Serial);
-          }
-        } else if (upload.status == UPLOAD_FILE_END) {
-          if (Update.end(true)) { //true to set the size to the current progress
-            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
-          } else {
-            Update.printError(Serial);
-          }
-          Serial.setDebugOutput(false);
-        }
       });
-    #endif
-    #ifdef ESP8266
-      httpUpdater.setup(&server);
-    #endif
+      server.on("/info", HTTP_GET, []() {
+        server.sendHeader("Connection", "close");
+        server.send(200, "text/html", (char*) infoPageString().c_str() );
+      });
+      #ifdef ESP32
+        server.on("/update", HTTP_GET, []() {
+          server.sendHeader("Connection", "close");
+          String updateIndexSTRING = String(updateIndex);
+          updateIndexSTRING.replace("~~~mqttDeviceName~~~",String(mqttDeviceName));
+          server.send(200, "text/html", updateIndexSTRING);
+        });
+        server.on("/updatepost", HTTP_POST, []() {
+          server.sendHeader("Connection", "close");
+          server.send(200, "text/html", (Update.hasError()) ? "FAIL" : updateDone);
+          delay(1000);
+          ESP.restart();
+        }, []() {
+          HTTPUpload& upload = server.upload();
+          if (upload.status == UPLOAD_FILE_START) {
+            Serial.setDebugOutput(true);
+            Serial.printf("Update: %s\n", upload.filename.c_str());
+            if (!Update.begin()) { //start with max available size
+              Update.printError(Serial);
+            }
+          } else if (upload.status == UPLOAD_FILE_WRITE) {
+            if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+              Update.printError(Serial);
+            }
+          } else if (upload.status == UPLOAD_FILE_END) {
+            if (Update.end(true)) { //true to set the size to the current progress
+              Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+            } else {
+              Update.printError(Serial);
+            }
+            Serial.setDebugOutput(false);
+          }
+        });
+      #endif
+      #ifdef ESP8266
+        httpUpdater.setup(&server);
+      #endif
 
-    server.begin();
-    MDNS.addService("http", "tcp", 80);
+      server.begin();
+      MDNS.addService("http", "tcp", 80);
 
-    Serial.printf("Ready! Open http://%s.local in your browser\n", mqttDeviceNameSTRING.c_str());
-  }
+      Serial.printf("Ready! Open http://%s.local in your browser\n", mqttDeviceNameSTRING.c_str());
+    }
+  #endif
 } // ---------------------------------------------------------------------------------------------------------- setup_wifi
 
 String infoPageString() {
-  String infoData = "<html><head>";
-infoData.concat("<link href=\"data:image/x-icon;base64,AAABAAEAEBAAAAAAAABoBQAAFgAAACgAAAAQAAAAIAAAAAEACAAAAAAAAAEAAAAAAAAAAAAAAAE\
+  #if defined (ESP32) || defined (ESP8266)
+    String infoData = "<html><head>";
+    infoData.concat("<link href=\"data:image/x-icon;base64,AAABAAEAEBAAAAAAAABoBQAAFgAAACgAAAAQAAAAIAAAAAEACAAAAAAAAAEAAAAAAAAAAAAAAAE\
 AAAAAAAAAAAAAsmw5AK1pOAC0bTsArmk4AK9qOACxazoAtm87ALJsOgCzbToAr2o5ALBqOQCwazkAtW46ALFrOQAAAAAAAAAAAAAAAAAAAAAAAAA\
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\
@@ -440,99 +503,115 @@ AAAAMAgsAAAAAAAAAAAwCCwAAAgIAAAAAAAAAAAAAAgIACQIEAAAAAAAAAAAAAAQCDQgCCgAAAAAAAAA
 CAAAAAAICAAAAAAICAAAAAgIAAAACAgAAAAICAAAAAA4CCQAAAgIAAAMFBgAAAAAAAAAAAAICAAAAAAAAAAAAAAAAAAACAgAAAAAAAAAAAAAAAAA\
 ABQoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//AAD4HwAA4AcAAMfjAACP8QAAn/kAAB/4AAAf+AAAnnkAAJ55AADOcwAAxmMAAP5/AAD+fwAA/n8\
 AAP//AAA=\" rel=\"icon\" type=\"image/x-icon\" />");
-  infoData.concat("</head><body style=\"font-size: 14px;\"><table border=1 cellpadding=3 style=\"display:inline-block;\"><tbody>");
-  infoData.concat("\r\n<tr><td>Update Page</td><td><a href=\"http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update\">");
-  infoData.concat("http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update");infoData.concat("</a> OR <a href=\"http://");
-  String mqttDeviceNameSTRING = String(mqttDeviceName);
-  mqttDeviceNameSTRING.replace(" ","_");
-  infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update\">");
-  infoData.concat("http://"); infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update");infoData.concat("</a></td></tr>");
-  infoData.concat("\r\n<tr><td>Reboot"); infoData.concat("</td><td><a href=\"/reboot\">Reboot Page</a>"); infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>Wireless SSID");infoData.concat("</td><td>");infoData.concat(ssid);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>Version");infoData.concat("</td><td>");infoData.concat(version_number);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>Use 5 volt relay?</td><td>"); infoData.concat( Use5Vrelay ? "true" : "false" ); infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>Switch 1</td><td>on pin "); infoData.concat(switch1); infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>Switch 2</td><td>on pin "); infoData.concat(switch2); infoData.concat("</td></tr>");
-  #ifdef CONTACTPIN1
-    infoData.concat("\r\n<tr><td>Contact Sensor 1</td><td>Enabled on pin "); infoData.concat(CONTACTPIN1); infoData.concat("</td></tr>");
+    infoData.concat("</head><body style=\"font-size: 14px;\"><table border=1 cellpadding=3 style=\"display:inline-block;\"><tbody>");
+    infoData.concat("\r\n<tr><td>Update Page</td><td><a href=\"http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update\">");
+    infoData.concat("http://"); infoData.concat(WiFi.localIP().toString()); infoData.concat("/update");infoData.concat("</a> OR <a href=\"http://");
+    String mqttDeviceNameSTRING = String(mqttDeviceName);
+    mqttDeviceNameSTRING.replace(" ","_");
+    infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update\">");
+    infoData.concat("http://"); infoData.concat(mqttDeviceNameSTRING); infoData.concat(".local/update");infoData.concat("</a></td></tr>");
+    infoData.concat("\r\n<tr><td>Reboot"); infoData.concat("</td><td><a href=\"/reboot\">Reboot Page</a>"); infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>Wireless SSID");infoData.concat("</td><td>");infoData.concat(ssid);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>Version");infoData.concat("</td><td>");infoData.concat(version_number);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>Use 5 volt relay?</td><td>"); infoData.concat( Use5Vrelay ? "true" : "false" ); infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>Switch 1</td><td>on pin "); infoData.concat(switch1); infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>Switch 2</td><td>on pin "); infoData.concat(switch2); infoData.concat("</td></tr>");
+    #ifdef CONTACTPIN1
+      infoData.concat("\r\n<tr><td>Contact Sensor 1</td><td>Enabled on pin "); infoData.concat(CONTACTPIN1); infoData.concat("</td></tr>");
+    #endif
+    #ifdef CONTACTPIN2
+      infoData.concat("\r\n<tr><td>Contact Sensor 2</td><td>Enabled on pin "); infoData.concat(CONTACTPIN2); infoData.concat("</td></tr>");
+    #endif
+    #if defined(useOLED128X64)
+      infoData.concat("\r\n<tr><td>OLED128X64 Display</td><td>Enabled</td></tr>");
+    #endif
+    #if defined(useOLED128X32)
+      infoData.concat("\r\n<tr><td>OLED128X32 Display</td><td>Enabled</td></tr>");
+    #endif
+    #if defined(useLCD2004)
+      infoData.concat("\r\n<tr><td>LCD2004 Display</td><td>Enabled</td></tr>");
+    #endif
+    #ifdef useDHT
+      infoData.concat("\r\n<tr><td>DHT"); infoData.concat(DHTTYPE); infoData.concat(" Multi-Sensor</td><td>Enabled on pin "); infoData.concat(DHTPIN); infoData.concat("</td></tr>");
+    #endif
+    #ifdef useBME280
+      infoData.concat("\r\n<tr><td>BME280 Multi-Sensor</td><td>Enabled</td></tr>");
+    #endif
+    #ifdef useESP32Temp
+      infoData.concat("\r\n<tr><td>ESP32 Internal Temperature Sensor</td><td>Enabled</td></tr>");
+    #endif
+    #if defined(useDHT) || defined(useBME280) || defined(useESP32Temp)
+      infoData.concat("\r\n<tr><td>Temperature Offset</td><td>"); infoData.concat(temperatureOffset); infoData.concat("</td></tr>");
+    #endif
+    #if defined(useDHT) || defined(useBME280)
+      infoData.concat("\r\n<tr><td>Humidity Offset</td><td>"); infoData.concat(humidityOffset); infoData.concat("</td></tr>");
+    #endif
+    infoData.concat("\r\n<tr><td>mqttServer");infoData.concat("</td><td>");infoData.concat(mqttServer);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttDeviceName");infoData.concat("</td><td>");infoData.concat(mqttDeviceName);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttSwitch1Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1Topic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttSwitch2Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2Topic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttSwitch1StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1StateTopic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttSwitch2StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2StateTopic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttSwitch1MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1MomentaryTopic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttSwitch2MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2MomentaryTopic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttContact1Topic");infoData.concat("</td><td>");infoData.concat(mqttContact1Topic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttContact2Topic");infoData.concat("</td><td>");infoData.concat(mqttContact2Topic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttTemperatureTopic");infoData.concat("</td><td>");infoData.concat(mqttTemperatureTopic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n<tr><td>mqttHumidityTopic");infoData.concat("</td><td>");infoData.concat(mqttHumidityTopic);infoData.concat("</td></tr>");
+    infoData.concat("\r\n</tbody></table>");
+    infoData.concat("\r\n<div style=\"display: inline-block;vertical-align: top;margin: 20px;border-style: dashed;padding: 20px;\"><h3>JSON Data From the Root Page</h3>\r\n");
+    String jsonTemp = jsonString(); jsonTemp.replace("\n","</br>");
+    infoData.concat(jsonTemp);
+    infoData.concat("\r\n</div></body><html>\r\n");
+    return infoData;
+  #else
+    return "";
   #endif
-  #ifdef CONTACTPIN2
-    infoData.concat("\r\n<tr><td>Contact Sensor 2</td><td>Enabled on pin "); infoData.concat(CONTACTPIN2); infoData.concat("</td></tr>");
-  #endif
-  #if defined(useOLED128X64)
-    infoData.concat("\r\n<tr><td>OLED128X64 Display</td><td>Enabled</td></tr>");
-  #endif
-  #if defined(useOLED128X32)
-    infoData.concat("\r\n<tr><td>OLED128X32 Display</td><td>Enabled</td></tr>");
-  #endif
-  #if defined(useLCD2004)
-    infoData.concat("\r\n<tr><td>LCD2004 Display</td><td>Enabled</td></tr>");
-  #endif
-  #ifdef useDHT
-    infoData.concat("\r\n<tr><td>DHT"); infoData.concat(DHTTYPE); infoData.concat(" Multi-Sensor</td><td>Enabled on pin "); infoData.concat(DHTPIN); infoData.concat("</td></tr>");
-  #endif
-  #ifdef useBME280
-    infoData.concat("\r\n<tr><td>BME280 Multi-Sensor</td><td>Enabled</td></tr>");
-  #endif
-  #ifdef useESP32Temp
-    infoData.concat("\r\n<tr><td>ESP32 Internal Temperature Sensor</td><td>Enabled</td></tr>");
-  #endif
-  #if defined(useDHT) || defined(useBME280) || defined(useESP32Temp)
-    infoData.concat("\r\n<tr><td>Temperature Offset</td><td>"); infoData.concat(temperatureOffset); infoData.concat("</td></tr>");
-  #endif
-  #if defined(useDHT) || defined(useBME280)
-    infoData.concat("\r\n<tr><td>Humidity Offset</td><td>"); infoData.concat(humidityOffset); infoData.concat("</td></tr>");
-  #endif
-  infoData.concat("\r\n<tr><td>mqttServer");infoData.concat("</td><td>");infoData.concat(mqttServer);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttDeviceName");infoData.concat("</td><td>");infoData.concat(mqttDeviceName);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttSwitch1Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1Topic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttSwitch2Topic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2Topic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttSwitch1StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1StateTopic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttSwitch2StateTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2StateTopic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttSwitch1MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch1MomentaryTopic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttSwitch2MomentaryTopic");infoData.concat("</td><td>");infoData.concat(mqttSwitch2MomentaryTopic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttContact1Topic");infoData.concat("</td><td>");infoData.concat(mqttContact1Topic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttContact2Topic");infoData.concat("</td><td>");infoData.concat(mqttContact2Topic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttTemperatureTopic");infoData.concat("</td><td>");infoData.concat(mqttTemperatureTopic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n<tr><td>mqttHumidityTopic");infoData.concat("</td><td>");infoData.concat(mqttHumidityTopic);infoData.concat("</td></tr>");
-  infoData.concat("\r\n</tbody></table>");
-  infoData.concat("\r\n<div style=\"display: inline-block;vertical-align: top;margin: 20px;border-style: dashed;padding: 20px;\"><h3>JSON Data From the Root Page</h3>\r\n");
-  String jsonTemp = jsonString(); jsonTemp.replace("\n","</br>");
-  infoData.concat(jsonTemp);
-  infoData.concat("\r\n</div></body><html>\r\n");
-  return infoData;
 }
 
 String jsonString() {
-  String jsonData = "{";
-  jsonData.concat("\r\n\"DeviceName\":\""); jsonData.concat(mqttDeviceName); jsonData.concat("\",");
-  jsonData.concat("\r\n\"DeviceIP\":\""); jsonData.concat(WiFi.localIP().toString()); jsonData.concat("\",");
-  jsonData.concat("\r\n\"Uptime\":\""); jsonData.concat(uptime()); jsonData.concat("\",");
-  jsonData.concat("\r\n\"InfoPage\":\"http://"); jsonData.concat(WiFi.localIP().toString()); jsonData.concat("/info\",");
-  if (Use5Vrelay == true ) {
-    jsonData.concat("\r\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "off" : "on"); jsonData.concat("\",");
-    jsonData.concat("\r\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "off" : "on"); jsonData.concat("\"");
-  } else {        
-    jsonData.concat("\r\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "on" : "off"); jsonData.concat("\",");
-    jsonData.concat("\r\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "on" : "off"); jsonData.concat("\"");
-  }
-  #ifdef CONTACTPIN1
-    jsonData.concat(",");
-    jsonData.concat("\r\n\"Contact1\":\""); jsonData.concat(digitalRead(CONTACTPIN1) ? "open" : "closed"); jsonData.concat("\"");
+  #if defined (ESP32) || defined (ESP8266) || defined (__AVR__)
+    String serverIP = "";
+    #if defined (__AVR__)
+      //serverIP = String(Ethernet.localIP());
+      return "";
+    #else
+      serverIP = WiFi.localIP().toString();
+      String jsonData = "{";
+      jsonData.concat("\r\n\"DeviceName\":\""); jsonData.concat(mqttDeviceName); jsonData.concat("\",");
+      jsonData.concat("\r\n\"DeviceIP\":\""); jsonData.concat(serverIP); jsonData.concat("\",");
+      jsonData.concat("\r\n\"Uptime\":\""); jsonData.concat(uptime()); jsonData.concat("\",");
+      jsonData.concat("\r\n\"InfoPage\":\"http://");
+      jsonData.concat(serverIP);
+      jsonData.concat("/info\",");
+      if (Use5Vrelay == true ) {
+        jsonData.concat("\r\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "off" : "on"); jsonData.concat("\",");
+        jsonData.concat("\r\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "off" : "on"); jsonData.concat("\"");
+      } else {        
+        jsonData.concat("\r\n\"Switch1\":\""); jsonData.concat(digitalRead(switch1) ? "on" : "off"); jsonData.concat("\",");
+        jsonData.concat("\r\n\"Switch2\":\""); jsonData.concat(digitalRead(switch2) ? "on" : "off"); jsonData.concat("\"");
+      }
+      #ifdef CONTACTPIN1
+        jsonData.concat(",");
+        jsonData.concat("\r\n\"Contact1\":\""); jsonData.concat(digitalRead(CONTACTPIN1) ? "open" : "closed"); jsonData.concat("\"");
+      #endif
+      #ifdef CONTACTPIN2
+        jsonData.concat(",");
+        jsonData.concat("\r\n\"Contact2\":\""); jsonData.concat(digitalRead(CONTACTPIN2) ? "open" : "closed"); jsonData.concat("\"");
+      #endif
+      #if defined(useDHT) || defined(useBME280)
+        if (lastTemperaturePayload != -1) { jsonData.concat(",\r\n\"Temperature\":\""); jsonData.concat(int(lastTemperaturePayload)); jsonData.concat("\""); }
+        if (lastHumidityPayload != -1) { jsonData.concat(",\r\n\"Humidity\":\""); jsonData.concat(int(lastHumidityPayload)); jsonData.concat("\""); }
+      #endif
+      #if defined(useESP32Temp)
+        if (lastTemperaturePayload != -1) { jsonData.concat(",\n\"Temperature\":\""); jsonData.concat(int(lastTemperaturePayload)); jsonData.concat("\""); }
+      #endif
+      jsonData.concat("\r\n}");
+      return jsonData;
+    #endif
+  #else
+    return "";  
   #endif
-  #ifdef CONTACTPIN2
-    jsonData.concat(",");
-    jsonData.concat("\r\n\"Contact2\":\""); jsonData.concat(digitalRead(CONTACTPIN2) ? "open" : "closed"); jsonData.concat("\"");
-  #endif
-  #if defined(useDHT) || defined(useBME280)
-    if (lastTemperaturePayload != -1) { jsonData.concat(",\r\n\"Temperature\":\""); jsonData.concat(int(lastTemperaturePayload)); jsonData.concat("\""); }
-    if (lastHumidityPayload != -1) { jsonData.concat(",\r\n\"Humidity\":\""); jsonData.concat(int(lastHumidityPayload)); jsonData.concat("\""); }
-  #endif
-  #if defined(useESP32Temp)
-    if (lastTemperaturePayload != -1) { jsonData.concat(",\n\"Temperature\":\""); jsonData.concat(int(lastTemperaturePayload)); jsonData.concat("\""); }
-  #endif
-  jsonData.concat("\r\n}");
-  return jsonData;
 }
 
 
@@ -551,13 +630,19 @@ void loop() { //----------------------------------------------------------------
 
   // REBOOT FREQUENCY
   if (RebootFrequencyDays > 0 && loopMillis >= (86400000 * RebootFrequencyDays)) { //86400000 per day
-    ESP.restart();
+    #if defined (ESP32) || defined (ESP8266)
+      ESP.restart();
+    #elif defined(__AVR__)
+      while(1) {};
+    #endif
   }
 
-  // WIFI RECONNECT
-  if (WiFi.status() != WL_CONNECTED) {
-    setup_wifi(true);
-  }
+  #if defined (ESP32) || defined (ESP8266)
+    // WIFI RECONNECT
+    if (WiFi.status() != WL_CONNECTED) {
+      setup_wifi(true);
+    }
+  #endif
 
   if (!client.connected()) { // MQTT RECONNECT
     reconnect();
@@ -568,7 +653,46 @@ void loop() { //----------------------------------------------------------------
     MDNS.update();
   #endif
 
-  server.handleClient(); // HANDLE HTTP CLIENT
+  #if defined (ESP32) || defined (ESP8266)
+    server.handleClient(); // HANDLE HTTP CLIENT
+  #endif
+
+  #if defined (__AVR__)
+    // listen for incoming clients
+    EthernetClient ethHTTPclient = server.available();
+    if (ethHTTPclient) {
+      //Serial.println("New HTTP client");
+      boolean currentLineIsBlank = true;
+      while (ethHTTPclient.connected()) {
+        if (ethHTTPclient.available()) {
+          char c = ethHTTPclient.read();
+          //Serial.write(c);
+          if (c == '\n' && currentLineIsBlank) {
+            ethHTTPclient.println("HTTP/1.1 200 OK");
+            ethHTTPclient.println("Content-Type: text/plain");
+            ethHTTPclient.println("Connection: close");  // the connection will be closed after completion of the response
+            ethHTTPclient.println("Refresh: 15");  // refresh the page automatically every 5 sec
+            ethHTTPclient.println(); // DO NOT REMOVE
+            ethHTTPclient.println(mqttDeviceName);
+            ethHTTPclient.println(uptime());
+            break;
+          }
+          if (c == '\n') {
+            // you're starting a new line
+            currentLineIsBlank = true;
+          } else if (c != '\r') {
+            // you've gotten a character on the current line
+            currentLineIsBlank = false;
+          }
+        }
+      }
+      // give the web browser time to receive the data
+      delay(1);
+      // close the connection:
+      ethHTTPclient.stop();
+      //Serial.println("Client disconnected");
+    }
+  #endif
 
   #if defined(useOLED128X64)
     if (loopMillis > sceneNextMillis) {
@@ -776,7 +900,14 @@ void reconnect() { // MQTT RECONNECT
       client.subscribe(mqttSwitch2MomentaryTopic);
       mqtt_reconnect_count = 0;
     } else {
-      if ( mqtt_reconnect_count >= 12 ) { ESP.restart(); } // REBOOT IN 1 MINUTE
+      if ( mqtt_reconnect_count >= 12 ) {
+        #if defined (ESP32) || defined (ESP8266)
+          ESP.restart();
+        #elif defined(__AVR__)
+          while(1) {};
+        #endif
+      } // REBOOT IN 1 MINUTE
+
       //if ( mqtt_reconnect_count >= 12 ) { setup_wifi(true); } // RESET WIFI IN 1 MINUTE
       mqtt_reconnect_count++;
       Serial.print(" - failed, rc=");
@@ -943,7 +1074,12 @@ void DisplayScene(unsigned long varMillis, int whichScene) {
       u8g2.drawStr(3,14,mqttDeviceName);
       u8g2.setFont(u8g2_font_profont11_tf);
       u8g2.drawStr(0,34,"IP: ");
-      u8g2.drawStr(25,34,(char*) WiFi.localIP().toString().c_str());
+      #if defined (ESP32) || defined (ESP8266)
+        u8g2.drawStr(25,34,(char*) WiFi.localIP().toString().c_str());
+      #elif defined(__AVR__)
+        u8g2.drawStr(25,34,(char*) String(Ethernet.localIP().c_str()));
+      #endif
+      
       // UPTIME
       char upt[32];
       uptime().toCharArray(upt, 32);
@@ -1006,7 +1142,13 @@ void DisplayScene(unsigned long varMillis, int whichScene) {
       u8g2.drawStr(3,14,mqttDeviceName);
       u8g2.setFont(u8g2_font_profont11_tf);
       u8g2.drawStr(0,32,"IP: ");
-      u8g2.drawStr(25,32,(char*) WiFi.localIP().toString().c_str());
+
+      #if defined (ESP32) || defined (ESP8266)
+        u8g2.drawStr(25,32,(char*) WiFi.localIP().toString().c_str());
+      #elif defined(__AVR__)
+        u8g2.drawStr(25,32,(char*) String(Ethernet.localIP()).c_str());
+      #endif
+      
     } else if (whichScene==2) {
       // UPTIME
       char upt[32];
@@ -1070,7 +1212,14 @@ void DisplayScene(unsigned long varMillis, int whichScene) {
         lcd.setCursor(0,0);
         lcd.print(mqttDeviceName);
         lcd.setCursor(0,1);
-        lcd.print("IP: " + WiFi.localIP().toString());
+        String serverIP = "";
+        #if defined (ESP32) || defined (ESP8266)
+          serverIP = WiFi.localIP().toString();
+        #elif defined(__AVR__)
+          serverIP = String(Ethernet.localIP());
+        #endif
+
+        lcd.print("IP: " + serverIP);
         lcd.setCursor(0,2);
         lcd.print("Uptime: ");
         lcd.setCursor(0,3);

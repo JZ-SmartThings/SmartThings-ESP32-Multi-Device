@@ -37,6 +37,7 @@ Contact Sensor
 
 Make sure to use my fork and run the MQTT SmartApp from there otherwise the contact sensor will not work.
 
+* v1.0.20190921 - Added support for a wired UNO with the W5100 Ethernet shield.
 * v1.0.20190907 - Changed MQTT SmartApp in order to sync Contact state. No longer using on/off sync workaround. Small enhancements and fixes.
 * v1.0.20190831 - Initial version
 </br>

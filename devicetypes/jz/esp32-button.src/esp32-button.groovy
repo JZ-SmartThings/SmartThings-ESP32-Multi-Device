@@ -1,5 +1,5 @@
 /**
- *  ESP32 Button v1.0.2019082
+ *  ESP32 Button v1.0.20200116
  *  Copyright 2019 JZ
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
@@ -121,20 +121,18 @@ def parse(description) {
 
 def push() {
 	sendEvent(name: "button", value: "pushed", data: [buttonNumber: "1"], descriptionText: "$device.displayName button 1 was pushed", isStateChange: true)
+	sendEvent(name: "switch", value: "on", isStateChange: true, display: false)
+	sendEvent(name: "switch", value: "off", isStateChange: true, display: false)	
 }
 
 def on() {
 	log.debug "on()"
-	sendEvent(name: "switch", value: "on")
-	runIn(0,push)
-	runIn(1,sendEvent(name: "switch", value: "off"))  
+	push()
 }
 
 def off() {
 	log.debug "off()"
-	sendEvent(name: "switch", value: "on")
-	runIn(0,push)
-	runIn(1,sendEvent(name: "switch", value: "off"))
+	push()
 }
 
 def setTemperature(temp) {
